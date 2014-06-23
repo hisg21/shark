@@ -44,6 +44,7 @@ import shark.execution.{SharkDDLWork, SparkLoadWork, SparkWork, TerminalOperator
 import shark.memstore2.{CacheType, LazySimpleSerDeWrapper, MemoryMetadataManager}
 import shark.memstore2.SharkTblProperties
 import shark.optimizer.SharkOptimizer
+import com.google.common.hash.Hashing
 
 
 /**
@@ -121,6 +122,11 @@ class SharkSemanticAnalyzer(conf: HiveConf) extends SemanticAnalyzer(conf) with 
       }
     } else {
       SessionState.get().setCommandType(HiveOperation.QUERY)
+
+      var hc = Hashing.sha256().hashString(ctx.getCmd)
+      var cm = SessionState.get().getCacheManager.get(hc)
+      ctx.setLocalScratchDir(cm.getVal)
+      ctx.setNonLocalScratchPath(new Path(cm.getVal))
     }
 
     // Invariant: At this point, the command will execute a query (i.e., its AST contains a
