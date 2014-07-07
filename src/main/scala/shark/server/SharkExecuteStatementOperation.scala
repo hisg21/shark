@@ -28,6 +28,10 @@ object SharkExecuteStatementOperation {
         val ctor = accessCtor("org.apache.hive.service.cli.operation.DeleteResourceOperation")
         ctor.newInstance(parentSession, statement, confOverlay)
       }
+      case "querycache" => {
+        val ctor = accessCtor("org.apache.hive.service.cli.operation.QueryCacheOperation")
+        ctor.newInstance(parentSession, statement, confOverlay)
+      }
       case _ => {
         new SharkSQLOperation(parentSession, statement, confOverlay)
       }
