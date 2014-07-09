@@ -124,9 +124,10 @@ class SharkSemanticAnalyzer(conf: HiveConf) extends SemanticAnalyzer(conf) with 
       SessionState.get().setCommandType(HiveOperation.QUERY)
 
       var hc = Hashing.sha256().hashString(ctx.getCmd)
-      var cm = SessionState.get().getCacheManager.get(hc)
+      var cacheManager = SessionState.get().getCacheManager
 
-      if(cm != null) {
+      if(cacheManager != null) {
+        val cm = cacheManager.get(hc)
         ctx.setLocalScratchDir(cm.getVal)
         ctx.setNonLocalScratchPath(new Path(cm.getVal))
       }
