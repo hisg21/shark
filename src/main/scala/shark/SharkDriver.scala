@@ -311,10 +311,14 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
       val cacheManager: CacheManager = ss.getCacheManager
       val hc: HashCode = Hashing.sha256.hashString(command)
       var isCached = false
+      var isSelectQuery = false
 
       if(cacheManager != null) {
         if(cacheManager.isAsserted(hc)) {
           isCached = true
+        }
+        if(command.toUpperCase().startsWith("SELECT") || command.toUpperCase().startsWith("FROM")) {
+          isSelectQuery = true;
         }
       }
 
@@ -360,7 +364,7 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
 
         plan = new QueryPlan(command, sem,  perfLogger.getStartTime(PerfLogger.DRIVER_RUN))
 
-        if(cacheManager != null) {
+        if(cacheManager != null && isSelectQuery) {
           cacheManager.get(hc).setContext(context)
           cacheManager.get(hc).setTree(tree)
           cacheManager.get(hc).setSem(sem)
