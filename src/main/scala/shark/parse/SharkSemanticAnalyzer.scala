@@ -128,8 +128,8 @@ class SharkSemanticAnalyzer(conf: HiveConf) extends SemanticAnalyzer(conf) with 
 
       if(cacheManager != null) {
         val cm = cacheManager.get(hc)
-        ctx.setLocalScratchDir(cm.getVal)
-        ctx.setNonLocalScratchPath(new Path(cm.getVal))
+        ctx.setLocalScratchDir(cm.getPath)
+        ctx.setNonLocalScratchPath(new Path(cm.getPath))
       }
     }
 
