@@ -123,7 +123,7 @@ class SharkSemanticAnalyzer(conf: HiveConf) extends SemanticAnalyzer(conf) with 
     } else {
       SessionState.get().setCommandType(HiveOperation.QUERY)
 
-      var hc = Hashing.sha256().hashString(ctx.getCmd).toString
+      var hc = ctx.getCmdHashCode
       var cacheManager = SessionState.get().getCacheManager
 
       if(cacheManager != null) {
