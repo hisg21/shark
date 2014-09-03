@@ -19,6 +19,9 @@ package shark
 
 import java.util.{List => JavaList}
 
+import com.google.common.hash.Hashing
+import org.apache.hadoop.hive.ql.cache.CacheManager
+
 import scala.collection.JavaConversions._
 
 import org.apache.hadoop.hive.conf.HiveConf
@@ -193,37 +196,90 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
           varSubbedCmd
         }
       }
-      context = new QueryContext(conf, useTableRddSink)
-      context.setCmd(command)
-      context.setTryCount(getTryCount())
 
-      val tree = ParseUtils.findRootNonNullToken((new ParseDriver()).parse(command, context))
-      val sem = SharkSemanticAnalyzerFactory.get(conf, tree)
-      if (!sem.isInstanceOf[ExplainSemanticAnalyzer] ||
-          sem.isInstanceOf[SharkExplainSemanticAnalyzer]) {
-        // Don't include the rewritten AST tree for Hive EXPLAIN mode.
-        shark.parse.ASTRewriteUtil.countDistinctToGroupBy(tree)
+      val ss: SessionState = SessionState.get
+      val cacheManager: CacheManager = ss.getCacheManager
+      val hc = Hashing.sha256.hashString(command).toString
+      var isCached = false
+      var isSelectQuery = false
+
+      if(cacheManager != null) {
+        if(cacheManager.isAsserted(hc)) {
+          isCached = true
+        }
+        if(command.toUpperCase().startsWith("SELECT") || command.toUpperCase().startsWith("FROM")) {
+          isSelectQuery = true;
+        }
       }
 
-      // Do semantic analysis and plan generation
-      val saHooks = SharkDriver.saHooksMethod.invoke(this, HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,
-        classOf[AbstractSemanticAnalyzerHook]).asInstanceOf[JavaList[AbstractSemanticAnalyzerHook]]
-      if (saHooks != null) {
-        val hookCtx = new HiveSemanticAnalyzerHookContextImpl()
-        hookCtx.setConf(conf)
-        saHooks.foreach(_.preAnalyze(hookCtx, tree))
-        sem.analyze(tree, context)
-        hookCtx.update(sem)
-        saHooks.foreach(_.postAnalyze(hookCtx, sem.getRootTasks()))
+      var tree: ASTNode = null
+      var sem: BaseSemanticAnalyzer = null
+
+      if(isCached) {
+        println(hc + " : " + System.currentTimeMillis() + " - [START] Loading cached query data")
+        context = cacheManager.get(hc).getContext.asInstanceOf[QueryContext]
+        tree = cacheManager.get(hc).getTree
+        sem = cacheManager.get(hc).getSem
+        plan = cacheManager.get(hc).getQp
+        plan.getFetchTask.resetTotalRows()
+        println(hc + " : " + System.currentTimeMillis() + " - [END]   Loading cached query data")
       } else {
-        sem.analyze(tree, context)
+        println(hc + " : " + System.currentTimeMillis() + " - [START] Create context")
+        context = new QueryContext(conf, useTableRddSink)
+        context.setCmd(command)
+        context.setTryCount(getTryCount())
+        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create context")
+
+        println(hc + " : " + System.currentTimeMillis() + " - [START] Create tree")
+        tree = ParseUtils.findRootNonNullToken((new ParseDriver()).parse(command, context))
+        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create tree")
+        println(hc + " : " + System.currentTimeMillis() + " - [START] Create sem")
+        sem = SharkSemanticAnalyzerFactory.get(conf, tree)
+        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create sem")
+
+        if (!sem.isInstanceOf[ExplainSemanticAnalyzer] ||
+          sem.isInstanceOf[SharkExplainSemanticAnalyzer]) {
+          // Don't include the rewritten AST tree for Hive EXPLAIN mode.
+          shark.parse.ASTRewriteUtil.countDistinctToGroupBy(tree)
+        }
+
+        // Do semantic analysis and plan generation
+        val saHooks = SharkDriver.saHooksMethod.invoke(this, HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,
+          classOf[AbstractSemanticAnalyzerHook]).asInstanceOf[JavaList[AbstractSemanticAnalyzerHook]]
+        if (saHooks != null) {
+          val hookCtx = new HiveSemanticAnalyzerHookContextImpl()
+          hookCtx.setConf(conf)
+          saHooks.foreach(_.preAnalyze(hookCtx, tree))
+          println(hc + " : " + System.currentTimeMillis() + " - [START] Analyze sem")
+          sem.analyze(tree, context)
+          println(hc + " : " + System.currentTimeMillis() + " - [END]   Analyze sem")
+          hookCtx.update(sem)
+          saHooks.foreach(_.postAnalyze(hookCtx, sem.getRootTasks()))
+        } else {
+          println(hc + " : " + System.currentTimeMillis() + " - [START] Analyze sem")
+          sem.analyze(tree, context)
+          println(hc + " : " + System.currentTimeMillis() + " - [END]   Analyze sem")
+        }
+
+        logDebug("Semantic Analysis Completed")
+
+        println(hc + " : " + System.currentTimeMillis() + " - [START] Validate sem")
+        sem.validate()
+        println(hc + " : " + System.currentTimeMillis() + " - [END]   Validate sem")
+
+        println(hc + " : " + System.currentTimeMillis() + " - [START] Create plan")
+        plan = new QueryPlan(command, sem,  perfLogger.getStartTime(PerfLogger.DRIVER_RUN))
+        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create plan")
+
+        if(cacheManager != null && isSelectQuery) {
+          println(hc + " : " + System.currentTimeMillis() + " - [START] Set cacheManager")
+          cacheManager.get(hc).setContext(context)
+          cacheManager.get(hc).setTree(tree)
+          cacheManager.get(hc).setSem(sem)
+          cacheManager.get(hc).setQp(plan)
+          println(hc + " : " + System.currentTimeMillis() + " - [END]   Set cacheManager")
+        }
       }
-
-      logDebug("Semantic Analysis Completed")
-
-      sem.validate()
-
-      plan = new QueryPlan(command, sem,  perfLogger.getStartTime(PerfLogger.DRIVER_RUN))
 
       // Initialize FetchTask right here. Somehow Hive initializes it twice...
       if (sem.getFetchTask != null) {
