@@ -271,7 +271,7 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
         plan = new QueryPlan(command, sem,  perfLogger.getStartTime(PerfLogger.DRIVER_RUN))
         println(hc + " : " + System.currentTimeMillis() + " - [END]   Create plan")
 
-        if(cacheManager != null && isSelectQuery) {
+        if(cacheManager != null && isSelectQuery && context.isQueryCacheEnabled) {
           println(hc + " : " + System.currentTimeMillis() + " - [START] Set cacheManager")
           cacheManager.get(hc).setContext(context)
           cacheManager.get(hc).setTree(tree)
