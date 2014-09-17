@@ -216,26 +216,18 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
       var sem: BaseSemanticAnalyzer = null
 
       if(isCached) {
-        println(hc + " : " + System.currentTimeMillis() + " - [START] Loading cached query data")
         context = cacheManager.get(hc).getContext.asInstanceOf[QueryContext]
         tree = cacheManager.get(hc).getTree
         sem = cacheManager.get(hc).getSem
         plan = cacheManager.get(hc).getQp
         plan.getFetchTask.resetTotalRows()
-        println(hc + " : " + System.currentTimeMillis() + " - [END]   Loading cached query data")
       } else {
-        println(hc + " : " + System.currentTimeMillis() + " - [START] Create context")
         context = new QueryContext(conf, useTableRddSink)
         context.setCmd(command)
         context.setTryCount(getTryCount())
-        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create context")
 
-        println(hc + " : " + System.currentTimeMillis() + " - [START] Create tree")
         tree = ParseUtils.findRootNonNullToken((new ParseDriver()).parse(command, context))
-        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create tree")
-        println(hc + " : " + System.currentTimeMillis() + " - [START] Create sem")
         sem = SharkSemanticAnalyzerFactory.get(conf, tree)
-        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create sem")
 
         if (!sem.isInstanceOf[ExplainSemanticAnalyzer] ||
           sem.isInstanceOf[SharkExplainSemanticAnalyzer]) {
@@ -250,34 +242,24 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
           val hookCtx = new HiveSemanticAnalyzerHookContextImpl()
           hookCtx.setConf(conf)
           saHooks.foreach(_.preAnalyze(hookCtx, tree))
-          println(hc + " : " + System.currentTimeMillis() + " - [START] Analyze sem")
           sem.analyze(tree, context)
-          println(hc + " : " + System.currentTimeMillis() + " - [END]   Analyze sem")
           hookCtx.update(sem)
           saHooks.foreach(_.postAnalyze(hookCtx, sem.getRootTasks()))
         } else {
-          println(hc + " : " + System.currentTimeMillis() + " - [START] Analyze sem")
           sem.analyze(tree, context)
-          println(hc + " : " + System.currentTimeMillis() + " - [END]   Analyze sem")
         }
 
         logDebug("Semantic Analysis Completed")
 
-        println(hc + " : " + System.currentTimeMillis() + " - [START] Validate sem")
         sem.validate()
-        println(hc + " : " + System.currentTimeMillis() + " - [END]   Validate sem")
 
-        println(hc + " : " + System.currentTimeMillis() + " - [START] Create plan")
         plan = new QueryPlan(command, sem,  perfLogger.getStartTime(PerfLogger.DRIVER_RUN))
-        println(hc + " : " + System.currentTimeMillis() + " - [END]   Create plan")
 
         if(cacheManager != null && isSelectQuery && context.isQueryCacheEnabled) {
-          println(hc + " : " + System.currentTimeMillis() + " - [START] Set cacheManager")
           cacheManager.get(hc).setContext(context)
           cacheManager.get(hc).setTree(tree)
           cacheManager.get(hc).setSem(sem)
           cacheManager.get(hc).setQp(plan)
-          println(hc + " : " + System.currentTimeMillis() + " - [END]   Set cacheManager")
         }
       }
 
