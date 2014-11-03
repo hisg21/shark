@@ -199,7 +199,8 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
 
       val ss: SessionState = SessionState.get
       val cacheManager: CacheManager = ss.getCacheManager
-      val hc = Hashing.sha256.hashString(command).toString
+      val hc = Hashing.sha256.hashString(ParseUtils.findRootNonNullToken((new ParseDriver()).parse(command, null)).dump()).toString
+      println(ParseUtils.findRootNonNullToken((new ParseDriver()).parse(command, null)).dump())
       var isCached = false
       var isSelectQuery = false
 
@@ -225,6 +226,7 @@ private[shark] class SharkDriver(conf: HiveConf) extends Driver(conf) with LogHe
         context = new QueryContext(conf, useTableRddSink)
         context.setCmd(command)
         context.setTryCount(getTryCount())
+        context.setCmdHashCode(hc)
 
         tree = ParseUtils.findRootNonNullToken((new ParseDriver()).parse(command, context))
         sem = SharkSemanticAnalyzerFactory.get(conf, tree)
